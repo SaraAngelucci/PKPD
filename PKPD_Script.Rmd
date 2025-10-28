@@ -1,0 +1,1488 @@
+---
+title: "PKPD Analysis"
+author: "Sara Angelucci and John Shorter"
+date: "2025-10-28"
+output: 
+  html_document: 
+    toc: true
+  pdf_document: 
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load libraries.
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(table1)
+library(lme4)
+library(dplyr)
+library(Hmisc)
+library(table1)
+library(d3Network)
+library(igraph)
+library(networkD3) #New one to help with Sankey diagram. 
+library(corrplot)
+library(ggcorrplot)
+library(likert)
+library(ggpubr)
+library(ggsankey)
+library(tidyr)
+library(knitr)
+library(kableExtra) 
+library(scales) 
+library(emmeans)
+library(stats)
+```
+
+# Let\`s read in the data, one that is all data points, another that is only first visit. Load and remove the 2 patients from the data file.
+
+```{r}
+setwd("C:/Users/saraa/Downloads/PKPD")
+#setwd("~/PKPD_PER")
+#"C:/Users/johnsh/OneDrive - Roskilde Universitet/Documents/PKPD_PER"
+
+PKPD_JRS_transposed_all <- read_excel("PKPD_JRS_transposed_JRS_SA_7new.xlsx")
+
+PKPD_JRS_transposed_all <- PKPD_JRS_transposed_all[!(PKPD_JRS_transposed_all$Name %in% c('Patient  16', 'Patient  65')), ]
+
+PKPD_JRS_transposed_all <- PKPD_JRS_transposed_all %>% 
+    dplyr::filter(!is.na(`Perampanel blood test value`))
+
+PKPD_JRS_transposed_all <- PKPD_JRS_transposed_all %>% 
+    dplyr::filter(!is.na(`Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED`))
+
+PKPD_JRS_transposed_all <- PKPD_JRS_transposed_all %>% 
+    dplyr::filter(`Dose of PER from list of medications column` != 0)
+
+# subset data set
+PKPD_JRS_transposed <- read_excel("PKPD_JRS_transposed-Sara_JRS_1VisitxPatient.xlsx")
+
+PKPD_JRS_transposed <- PKPD_JRS_transposed[!(PKPD_JRS_transposed$Name %in% c('Patient  16', 'Patient  65')), ]
+
+PKPD_JRS_transposed <- PKPD_JRS_transposed %>% 
+    dplyr::filter(!is.na(`Perampanel blood test value`))
+
+PKPD_JRS_transposed <- PKPD_JRS_transposed %>% 
+    dplyr::filter(!is.na(`Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED`))
+
+PKPD_JRS_transposed <- PKPD_JRS_transposed %>% 
+    dplyr::filter(`Dose of PER from list of medications column` != 0)
+```
+
+## Looks like there is a now a duplicated column with the same title. R has changed this for us.
+
+# Make a few plots, first number of visits.
+
+```{r}
+ggplot(data = PKPD_JRS_transposed_all, aes(x = Visit_number)) + 
+  geom_bar() +
+  labs(title = "Frequency of Visit number",
+       x = "Visit number",
+       y = "Count") +
+  theme_minimal()
+```
+
+## Next plot, gender.
+
+```{r}
+ggplot(data = PKPD_JRS_transposed, aes(x = `Gender (0=F, 1=M)`)) + 
+  geom_bar() +
+  labs(title = "Distribution of gender",
+       x = "Gender (0=F, 1=M)",
+       y = "Count") +
+  theme_minimal()
+```
+
+## Next plot, current age, full years.
+
+```{r}
+ggplot(data = PKPD_JRS_transposed, aes(x = `Current age, full years`)) + 
+  geom_bar() +
+  labs(title = "Current age, full years",
+       x = "Current age, full years",
+       y = "Count") +
+  theme_minimal()
+```
+
+## BMI histogram.
+
+```{r}
+ggplot(data = PKPD_JRS_transposed, aes(x = `BMI (kg/m^2)`)) + 
+  geom_histogram() +
+  labs(title = "BMI distribution",
+       x = "BMI",
+       y = "Count") +
+  theme_minimal()
+```
+
+## Beneficial effect on seizures 3 months AFTER perampanel start against weight.
+
+```{r}
+PKPD_JRS_transposed$`Weight at plasma measure` <- as.numeric(PKPD_JRS_transposed$`Weight at plasma measure`)
+
+PKPD_JRS_transposed$`Beneficial effect (0=no, 1=yes) FIXED` <- as.factor(PKPD_JRS_transposed$`Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED`)
+
+ggplot(data = PKPD_JRS_transposed, aes(x = `Weight at plasma measure`, 
+                                       y = `Perampanel blood test value`,
+                                       color = `Beneficial effect (0=no, 1=yes) FIXED`)) + 
+  geom_point(size = 3, alpha = 0.7) +  # Adjust point size and transparency
+  geom_smooth(method = "lm", se = TRUE, linetype = "dashed", size = 1) +  # Add dashed regression lines
+  labs(title = "Perampanel Plasma Level vs Weight",
+       x = "Patient Weight (kg)",
+       y = "Plasma Level of PER",
+       color = "Beneficial Effect of Perampanel") +
+  theme_minimal(base_size = 15) +  # Use a larger base size for better readability
+  scale_color_manual(values = c("0" = "red3", "1" = "blue4"),  # Custom color scheme
+                     labels = c("No", "Yes")) +  # Custom labels for the legend
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),  # Center and bold the title
+    axis.title = element_text(face = "bold"),  # Bold the axis titles
+    legend.position = "top",  # Position the legend at the top
+    legend.title = element_text(face = "bold"),  # Bold the legend title
+    legend.background = element_rect(fill = "lightgray", color = NA),  # Light gray background for legend
+    legend.key = element_rect(fill = "white", color = NA)  # White background for legend keys
+  )
+```
+
+## Beneficial effect on seizures 3 months AFTER perampanel start against mg/kg.
+
+```{r}
+PKPD_JRS_transposed$`PER dose` <- as.numeric(PKPD_JRS_transposed$`Dose of PER from list of medications column`)
+
+PKPD_JRS_transposed$mgkg =  PKPD_JRS_transposed$`PER dose`/PKPD_JRS_transposed$`Weight at plasma measure`
+
+ggplot(data = PKPD_JRS_transposed, aes(x = `mgkg`, 
+                                       y = `Perampanel blood test value`,
+                                       color = `Beneficial effect (0=no, 1=yes) FIXED`)) + 
+geom_point(size = 3, alpha = 0.7) +  # Adjust point size and transparency
+#geom_jitter(size = 3, alpha = 0.7, width = 0.3, height = 0, seed = 666) +  # Add jitter to points
+geom_smooth(method = "lm", se = TRUE, linetype = "dashed", size = 1) +  # Add dashed regression lines
+  labs(title = "Perampanel Plasma Level vs Dose",
+       x = "Perampanel Dose (mg/kg)",
+       y = "Plasma Perampanel (ng/mL)",
+       color = "Beneficial effect 3 months AFTER perampanel start") +
+  theme_minimal(base_size = 14) +  # Use a larger base size for better readability
+  scale_color_manual(values = c("0" = "red3", "1" = "blue4"),  # Custom color scheme
+                     labels = c("No", "Yes")) +  # Custom labels for the legend
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),  # Center and bold the title
+    axis.title = element_text(face = "bold"),  # Bold the axis titles
+    legend.position = "top",  # Position the legend at the top
+    legend.title = element_text(face = "bold"),  # Bold the legend title
+    legend.background = element_rect(fill = "lightgray", color = NA),  # Light gray background for legend
+    legend.key = element_rect(fill = "white", color = NA)  # White background for legend keys
+  )
+```
+
+## Did the Patient become seizure free on perampanel against mg/kg.
+
+```{r}
+PKPD_JRS_transposed$`PER dose` <- as.numeric(PKPD_JRS_transposed$`Dose of PER from list of medications column`)
+PKPD_JRS_transposed$`Did the Patient become seizure free on perampanel? (0=no, 1=yes)` <- as.factor(PKPD_JRS_transposed$`Did the Patient  become seizure free on perampanel? (0=no, 1=yes)`)
+
+PKPD_JRS_transposed$mgkg =  PKPD_JRS_transposed$`PER dose`/PKPD_JRS_transposed$`Weight at plasma measure`
+
+ggplot(data = PKPD_JRS_transposed, aes(x = `mgkg`, 
+                                       y = `Perampanel blood test value`,
+                                       color = `Did the Patient become seizure free on perampanel? (0=no, 1=yes)`)) + 
+geom_point(size = 3, alpha = 0.7) +  # Adjust point size and transparency
+#geom_jitter(size = 3, alpha = 0.7, width = 0.3, height = 0, seed = 666) +  # Add jitter to points
+geom_smooth(method = "lm", se = TRUE, linetype = "dashed", size = 1) +  # Add dashed regression lines
+  labs(title = "Perampanel Plasma Level vs Dose",
+       x = "Perampanel Dose (mg/kg)",
+       y = "Plasma Perampanel (ng/mL)",
+       color = "Did the Patient  become seizure free on perampanel") +
+  theme_minimal(base_size = 14) +  # Use a larger base size for better readability
+  scale_color_manual(values = c("0" = "red3", "1" = "blue4"),  # Custom color scheme
+                     labels = c("No", "Yes")) +  # Custom labels for the legend
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),  # Center and bold the title
+    axis.title = element_text(face = "bold"),  # Bold the axis titles
+    legend.position = "top",  # Position the legend at the top
+    legend.title = element_text(face = "bold"),  # Bold the legend title
+    legend.background = element_rect(fill = "lightgray", color = NA),  # Light gray background for legend
+    legend.key = element_rect(fill = "white", color = NA)  # White background for legend keys
+  )
+```
+
+## Plotting side effects of PER against mg/kg.
+
+```{r}
+PKPD_JRS_transposed$`side effects FIXED` <- as.factor(PKPD_JRS_transposed$`side effects (0 = none, 1=something)`)
+
+ggplot(data = PKPD_JRS_transposed, aes(x = `mgkg`, 
+                                       y = `Perampanel blood test value`,
+                                       color = `side effects FIXED`)) + 
+  geom_point(size = 3, alpha = 0.7) +  # Adjust point size and transparency
+  #geom_jitter(size = 3, alpha = 0.7, width = 0.3, height = 0, seed = 666) +  # Add jitter to points
+  geom_smooth(method = "lm", se = TRUE, linetype = "dashed", size = 1) +  # Add dashed regression lines
+  labs(title = "Perampanel Plasma Level vs Dose with side effects",
+       x = "Perampanel Dose (mg/kg)",
+       y = "Plasma Perampanel (ng/mL)",
+       color = "Side effects from Perampanel") +
+  theme_minimal(base_size = 14) +  # Use a larger base size for better readability
+  scale_color_manual(values = c("0" = "red3", "1" = "blue4"),  # Custom color scheme
+                     labels = c("No", "Yes")) +  # Custom labels for the legend
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),  # Center and bold the title
+    axis.title = element_text(face = "bold"),  # Bold the axis titles
+    legend.position = "top",  # Position the legend at the top
+    legend.title = element_text(face = "bold"),  # Bold the legend title
+    legend.background = element_rect(fill = "lightgray", color = NA),  # Light gray background for legend
+    legend.key = element_rect(fill = "white", color = NA)  # White background for legend keys
+  )
+```
+
+## Beneficial effect on seizures 3 months AFTER perampanel start against mg/kg with all data points.
+
+```{r}
+
+PKPD_JRS_transposed_all$`Weight at plasma measure` <- as.numeric(PKPD_JRS_transposed_all$`Weight at plasma measure`)
+
+PKPD_JRS_transposed_all$`Beneficial effect (0=no, 1=yes) FIXED` <- as.factor(PKPD_JRS_transposed_all$`Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED`)
+
+PKPD_JRS_transposed_all$`PER dose` <- as.numeric(PKPD_JRS_transposed_all$`Dose of PER from list of medications column`)
+
+PKPD_JRS_transposed_all$mgkg =  PKPD_JRS_transposed_all$`PER dose`/PKPD_JRS_transposed_all$`Weight at plasma measure`
+
+ggplot(data = PKPD_JRS_transposed_all, aes(x = `mgkg`, 
+                                       y = `Perampanel blood test value`,
+                                       color = `Beneficial effect (0=no, 1=yes) FIXED`)) + 
+geom_point(size = 3, alpha = 0.7) +  # Adjust point size and transparency
+#geom_jitter(size = 3, alpha = 0.7, width = 0.3, height = 0, seed = 666) +  # Add jitter to points
+geom_smooth(method = "lm", se = TRUE, linetype = "dashed", size = 1) +  # Add dashed regression lines
+  labs(title = "Perampanel Plasma Level vs Dose",
+       x = "Perampanel Dose (mg/kg)",
+       y = "Plasma Perampanel (ng/mL)",
+       color = "Beneficial effect 3 months AFTER perampanel start") +
+  theme_minimal(base_size = 14) +  # Use a larger base size for better readability
+  scale_color_manual(values = c("0" = "red3", "1" = "blue4"),  # Custom color scheme
+                     labels = c("No", "Yes")) +  # Custom labels for the legend
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),  # Center and bold the title
+    axis.title = element_text(face = "bold"),  # Bold the axis titles
+    legend.position = "top",  # Position the legend at the top
+    legend.title = element_text(face = "bold"),  # Bold the legend title
+    legend.background = element_rect(fill = "lightgray", color = NA),  # Light gray background for legend
+    legend.key = element_rect(fill = "white", color = NA)  # White background for legend keys
+  )
+```
+
+## Did the Patient become seizure free on perampanel against mg/kg with all data points.
+
+```{r}
+PKPD_JRS_transposed_all$`PER dose` <- as.numeric(PKPD_JRS_transposed_all$`Dose of PER from list of medications column`)
+
+PKPD_JRS_transposed_all$`Did the Patient become seizure free on perampanel? (0=no, 1=yes)` <- as.factor(PKPD_JRS_transposed_all$`Did the Patient  become seizure free on perampanel? (0=no, 1=yes)`)
+
+PKPD_JRS_transposed_all$mgkg =  PKPD_JRS_transposed_all$`PER dose`/PKPD_JRS_transposed_all$`Weight at plasma measure`
+
+ggplot(data = PKPD_JRS_transposed_all, aes(x = `mgkg`, 
+                                       y = `Perampanel blood test value`,
+                                       color = `Did the Patient become seizure free on perampanel? (0=no, 1=yes)`)) + 
+geom_point(size = 3, alpha = 0.7) +  # Adjust point size and transparency
+#geom_jitter(size = 3, alpha = 0.7, width = 0.3, height = 0, seed = 666) +  # Add jitter to points
+geom_smooth(method = "lm", se = TRUE, linetype = "dashed", size = 1) +  # Add dashed regression lines
+  labs(title = "Perampanel Plasma Level vs Dose",
+       x = "Perampanel Dose (mg/kg)",
+       y = "Plasma Perampanel (ng/mL)",
+       color = "Did the Patient  become seizure free on perampanel") +
+  theme_minimal(base_size = 14) +  # Use a larger base size for better readability
+  scale_color_manual(values = c("0" = "red3", "1" = "blue4"),  # Custom color scheme
+                     labels = c("No", "Yes")) +  # Custom labels for the legend
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),  # Center and bold the title
+    axis.title = element_text(face = "bold"),  # Bold the axis titles
+    legend.position = "top",  # Position the legend at the top
+    legend.title = element_text(face = "bold"),  # Bold the legend title
+    legend.background = element_rect(fill = "lightgray", color = NA),  # Light gray background for legend
+    legend.key = element_rect(fill = "white", color = NA)  # White background for legend keys
+  )
+```
+
+## Plotting side effects of PER against mg/kg for all data points.
+
+```{r}
+PKPD_JRS_transposed_all$`side effects FIXED` <- as.factor(PKPD_JRS_transposed_all$`side effects (0 = none, 1=something)`)
+
+ggplot(data = PKPD_JRS_transposed_all, aes(x = `mgkg`, 
+                                       y = `Perampanel blood test value`,
+                                       color = `side effects FIXED`)) + 
+  geom_point(size = 3, alpha = 0.7) +  # Adjust point size and transparency
+  #geom_jitter(size = 3, alpha = 0.7, width = 0.3, height = 0, seed = 666) +  # Add jitter to points
+  geom_smooth(method = "lm", se = TRUE, linetype = "dashed", size = 1) +  # Add dashed regression lines
+  labs(title = "Perampanel Plasma Level vs Dose with side effects",
+       x = "Perampanel Dose (mg/kg)",
+       y = "Plasma Perampanel (ng/mL)",
+       color = "Side effects from Perampanel") +
+  theme_minimal(base_size = 14) +  # Use a larger base size for better readability
+  scale_color_manual(values = c("0" = "red3", "1" = "blue4"),  # Custom color scheme
+                     labels = c("No", "Yes")) +  # Custom labels for the legend
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),  # Center and bold the title
+    axis.title = element_text(face = "bold"),  # Bold the axis titles
+    legend.position = "top",  # Position the legend at the top
+    legend.title = element_text(face = "bold"),  # Bold the legend title
+    legend.background = element_rect(fill = "lightgray", color = NA),  # Light gray background for legend
+    legend.key = element_rect(fill = "white", color = NA)  # White background for legend keys
+  )
+```
+
+# Table 1 (in manuscript), using file with 1 visit per patient. Making a data table on patient profiles.
+
+```{r}
+# Convert to factors
+PKPD_JRS_transposed$`Gender (0=F, 1=M)` <- as.factor(PKPD_JRS_transposed$`Gender (0=F, 1=M)`)
+levels(PKPD_JRS_transposed$`Gender (0=F, 1=M)`) <- c("Female", "Male")
+
+PKPD_JRS_transposed$`Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED` <- as.factor(PKPD_JRS_transposed$`Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED`)
+levels(PKPD_JRS_transposed$`Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED`) <- c("No", "Yes")
+
+PKPD_JRS_transposed$`side effects (0 = none, 1=something)` <- as.factor(PKPD_JRS_transposed$`side effects (0 = none, 1=something)`)
+levels(PKPD_JRS_transposed$`side effects (0 = none, 1=something)`) <- c("No", "Yes")
+
+PKPD_JRS_transposed$`Did the Patient become seizure free on perampanel? (0=no, 1=yes)` <- as.factor(PKPD_JRS_transposed$`Did the Patient become seizure free on perampanel? (0=no, 1=yes)`)
+levels(PKPD_JRS_transposed$`Did the Patient become seizure free on perampanel? (0=no, 1=yes)`) <- c("No", "Yes")
+
+PKPD_JRS_transposed$`Is the Patient currently on perampanel treatment? (Y/N). If "No" then go to row 21 (0=No, 1=Yes)` <- as.factor(PKPD_JRS_transposed$`Is the Patient currently on perampanel treatment? (Y/N). If "No" then go to row 21 (0=No, 1=Yes)`)
+levels(PKPD_JRS_transposed$`Is the Patient currently on perampanel treatment? (Y/N). If "No" then go to row 21 (0=No, 1=Yes)`) <- c("No", "Yes")
+
+# Apply descriptive labels
+table1::label(PKPD_JRS_transposed$`Current age, full years`) <- "Current age (years)"
+table1::label(PKPD_JRS_transposed$`Age at start of perampanel (full years)`) <- "Age at start of perampanel (years)"
+table1::label(PKPD_JRS_transposed$`Gender (0=F, 1=M)`) <- "Sex"
+table1::label(PKPD_JRS_transposed$`Weight at plasma measure`) <- "Weight (kg)"
+table1::label(PKPD_JRS_transposed$`side effects (0 = none, 1=something)`) <- "Adverse effects"
+table1::label(PKPD_JRS_transposed$`Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED`) <- "Reduced seizure burden 3 months after perampanel start"
+table1::label(PKPD_JRS_transposed$`Did the Patient become seizure free on perampanel? (0=no, 1=yes)`) <- "Patient became seizure free on perampanel"
+table1::label(PKPD_JRS_transposed$`Is the Patient currently on perampanel treatment? (Y/N). If "No" then go to row 21 (0=No, 1=Yes)`) <- "Patient is currently on perampanel"
+table1::label(PKPD_JRS_transposed$`Total duration of perampanel treatment (in total years) (remains to be calculated)`) <- "Total duration of perampanel treatment (years)"
+table1::label(PKPD_JRS_transposed$`Seizure type (focal, generalized, both focal+generalized, unknown origin)`) <- "Seizure type"
+
+# Function to render missing values
+render_missing <- function(x, ...) c("Missing" = sum(is.na(x)))
+
+# Custom continuous rendering function:
+# Show both median [Q1–Q3] and median [min–max] for age and duration,
+# only median [Q1–Q3] for others.
+my.render.cont <- function(x, ...) {
+  lbl <- attr(x, "label")
+  q1 <- quantile(x, 0.25, na.rm = TRUE)
+  q3 <- quantile(x, 0.75, na.rm = TRUE)
+  mn <- min(x, na.rm = TRUE)
+  mx <- max(x, na.rm = TRUE)
+  med <- median(x, na.rm = TRUE)
+  
+  if (lbl %in% c("Age at start of perampanel (years)",
+                 "Total duration of perampanel treatment (years)")) {
+    c("",
+      "Median [Q1–Q3]" = sprintf("%.1f [%.1f–%.1f]", med, q1, q3),
+      "Median [min–max]" = sprintf("%.1f [%.1f–%.1f]", med, mn, mx))
+  } else {
+    c("",
+      "Median [Q1–Q3]" = sprintf("%.1f [%.1f–%.1f]", med, q1, q3))
+  }
+}
+
+# Calculate total number of patients
+total_patients <- nrow(PKPD_JRS_transposed[!is.na(PKPD_JRS_transposed$Name), ])
+
+# Create age group variable
+PKPD_JRS_transposed$`Age group` <- cut(
+  PKPD_JRS_transposed$`Age at start of perampanel (full years)`,
+  breaks = c(-Inf, 5, 12, Inf),
+  labels = c("<6", "6–12", ">12"),
+  right = TRUE
+)
+
+table1::label(PKPD_JRS_transposed$`Age group`) <- "Age group (age at start of perampanel)"
+
+# Generate summary table
+table_output <- table1(
+  ~ `Age at start of perampanel (full years)` +
+    `Age group` +
+    `Gender (0=F, 1=M)` +
+    `Weight at plasma measure` +
+    `Seizure type (focal, generalized, both focal+generalized, unknown origin)` +
+    `Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED` +
+    `Did the Patient become seizure free on perampanel? (0=no, 1=yes)` +
+    `side effects (0 = none, 1=something)` +
+    `Is the Patient currently on perampanel treatment? (Y/N). If "No" then go to row 21 (0=No, 1=Yes)` +
+    `Total duration of perampanel treatment (in total years) (remains to be calculated)`,
+  data = PKPD_JRS_transposed,
+  render.missing = render_missing,
+  render.continuous = my.render.cont,
+  overall = "Perampanel",
+  topclass = "Rtable1-basic",
+  rowlabelhead = "Patient characteristics"
+)
+
+table_output
+```
+
+# Supplemental Table 1 (in manuscript), medication list with KABLE (including Perampanel).
+
+```{r}
+medication_df <- PKPD_JRS_transposed_all %>%
+  select(Name, Medications_correct_to_john_alphabetic) %>%
+  separate_rows(Medications_correct_to_john_alphabetic, sep = ",") %>%
+  mutate(Medications_correct_to_john_alphabetic = trimws(Medications_correct_to_john_alphabetic))
+
+#Total number of patients
+total_patients <- n_distinct(medication_df$Name)
+
+#Medication summary by drug (including perampanel)
+medication_summary_incl <- medication_df %>%
+  group_by(Medications_correct_to_john_alphabetic) %>%
+  summarise(
+    `Number of Patients` = n_distinct(Name),  
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(`Number of Patients`))
+
+#percentage of patients
+medication_summary_incl <- medication_summary_incl %>%
+  mutate(
+    `Percentage of Patients` = percent(`Number of Patients` / total_patients)
+  )
+
+#Number of medications per patient (including perampanel)
+medications_per_patient_incl <- medication_df %>%
+  group_by(Name) %>%
+  summarise(
+    Medications_Per_Patient = n_distinct(Medications_correct_to_john_alphabetic)
+  )
+
+#statistics for medications per patient (including perampanel)
+overall_median_incl <- median(medications_per_patient_incl$Medications_Per_Patient, na.rm = TRUE)
+overall_iqr_incl <- quantile(medications_per_patient_incl$Medications_Per_Patient, c(0.25, 0.75), na.rm = TRUE)
+
+# Add only the median [IQR] row (incl. perampanel)
+medication_summary_incl <- medication_summary_incl %>%
+  add_row(
+    Medications_correct_to_john_alphabetic = "Median of medications administered [IQR] (incl. perampanel)", 
+    `Number of Patients` = NA, 
+    `Percentage of Patients` = paste0(overall_median_incl, " [", round(overall_iqr_incl[1], 1), " - ", round(overall_iqr_incl[2], 1), "]")
+  )
+
+#Final medication summary
+medication_summary <- medication_summary_incl %>%
+  distinct(Medications_correct_to_john_alphabetic, .keep_all = TRUE)
+
+#Convert 'Number of Patients' to character to handle NA properly for summary row
+medication_summary$`Number of Patients` <- as.character(medication_summary$`Number of Patients`)
+medication_summary$`Number of Patients`[is.na(medication_summary$`Number of Patients`)] <- ""
+
+# Move the statistical row to the bottom
+statistical_rows <- medication_summary %>%
+  dplyr::filter(grepl("Median", Medications_correct_to_john_alphabetic))
+
+medication_summary_main <- medication_summary %>%
+  dplyr::filter(!grepl("Median", Medications_correct_to_john_alphabetic))
+
+#Combine main summary with the statistical row at the bottom
+medication_summary_final <- bind_rows(medication_summary_main, statistical_rows)
+
+#row to bold
+rows_to_bold <- which(medication_summary_final$Medications_correct_to_john_alphabetic == 
+  "Median of medications administered [IQR] (incl. perampanel)")
+
+#table
+medication_summary_final %>%
+  kbl(
+    caption = "<b>Medications administered to patients</b>",
+    col.names = c("Medications", "Number of patients", "Percentage of patients"),
+    align = "lcc",
+    escape = FALSE
+  ) %>%
+  kable_classic(full_width = FALSE, html_font = "<Calibri>") %>%
+  row_spec(0, bold = TRUE) %>%
+  row_spec(0, extra_css = "padding-top:7px;padding-bottom:7px;") %>%
+  row_spec(rows_to_bold, bold = TRUE)
+
+medication_summary_final
+```
+
+# Supplemental Table 2 (in manuscript), 10 most frequently coadministered medications per patient.
+
+```{r}
+#Combination per patient per visit
+combination_df <- PKPD_JRS_transposed_all %>%
+  select(
+    Name,
+    Visit_number,
+    beneficial_raw = `Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED`,
+    side_effect_raw = `new side effects (0 = none, 1=something)`,
+    Medications_correct_to_john_alphabetic
+  ) %>%
+  separate_rows(Medications_correct_to_john_alphabetic, sep = ",") %>%
+  mutate(Medications_correct_to_john_alphabetic = trimws(Medications_correct_to_john_alphabetic)) %>%
+  group_by(Name, Visit_number) %>%
+  summarise(
+    Combination = paste(
+      c("Perampanel", sort(setdiff(unique(Medications_correct_to_john_alphabetic), "Perampanel"))),
+      collapse = ", "
+    ),
+    reduced_seizure_burden = max(beneficial_raw, na.rm = TRUE),
+    adverse_effects = max(side_effect_raw, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+#Patient-level combinations (collapse across visits)
+patient_combination <- combination_df %>%
+  group_by(Name, Combination) %>%
+  summarise(
+    reduced_seizure_burden = ifelse(all(is.na(reduced_seizure_burden)), NA, max(reduced_seizure_burden, na.rm = TRUE)),
+    adverse_effects = ifelse(all(is.na(adverse_effects)), NA, max(adverse_effects, na.rm = TRUE)),
+    .groups = 'drop'
+  )
+
+N_total_patients <- patient_combination %>%
+  distinct(Name) %>%
+  nrow()  # all perampanel patients (mono + combo)
+
+N_combo_patients <- patient_combination %>%
+  filter(Combination != "Perampanel") %>%
+  distinct(Name) %>%
+  nrow()  # only patients with combos
+
+# summary table (only combos)
+summary_table <- patient_combination %>%
+  filter(Combination != "Perampanel") %>%
+  group_by(Combination) %>%
+  summarise(
+    `Number of patients` = n(),
+    `Reduced seizure burden` = sum(reduced_seizure_burden, na.rm = TRUE),
+    `Adverse effects` = sum(adverse_effects, na.rm = TRUE),
+    .groups = 'drop'
+  ) %>%
+  mutate(
+    `% of patients with reduced seizure burden` = paste0(round((`Reduced seizure burden` / `Number of patients`) * 100, 1), "%"),
+    `% of patients with adverse effects` = paste0(round((`Adverse effects` / `Number of patients`) * 100, 1), "%")
+  ) %>%
+  arrange(desc(`Reduced seizure burden`)) %>%
+  slice_head(n = 10)
+
+#table
+summary_table %>%
+  kbl(
+    caption = paste0(
+      "<b>First 10 most frequent co-medications administered per patient (with higher reduced seizure burden first)</b> ",
+      "(N = ", N_combo_patients, " patients out of ", N_total_patients, " total)"
+    ),
+    align = "lccccc",
+    escape = FALSE
+  ) %>%
+  kable_classic(full_width = FALSE, html_font = "Calibri") %>%
+  column_spec(1:ncol(summary_table), extra_css = "white-space: nowrap; background-color:white;") %>%
+  row_spec(0, bold = TRUE, extra_css = "padding-top:7px; padding-bottom:7px; background-color:white;") 
+```
+
+# Supplemental Table 3 (in manuscript), adverse effects.
+
+```{r}
+#Define symptom groups
+side_effect_groups <- list(
+  "None" = c("none"),
+  "Central nervous system" = c("fatigue", "dizziness", "reduced cognitive performance", "increased seizures","memory difficulties"),
+  
+  "Psychobehavioral" = c("aggressivity", "irritability", 
+                         "depression / sadness", "mood swings", "restlessness"),
+  
+  "Gastrointestinal" = c("weight gain / increased appetite", "abdominal pain", "loose stool", "nausea"),
+  "Other" = c("restless sleep")
+)
+
+#Map symptoms to group
+symptom_to_group <- unlist(lapply(names(side_effect_groups), function(group) {
+  setNames(rep(group, length(side_effect_groups[[group]])), side_effect_groups[[group]])
+}))
+
+#medication_df from patient data
+medication_df <- PKPD_JRS_transposed_all %>%
+  select(Name, `side effects per patient`) %>%
+  filter(!is.na(`side effects per patient`)) %>%
+  separate_rows(`side effects per patient`, sep = ",") %>%
+  mutate(symptom = tolower(trimws(`side effects per patient`))) %>%
+  filter(symptom %in% names(symptom_to_group)) %>%
+  mutate(
+    Category = symptom_to_group[symptom],
+    Symptom = str_to_sentence(symptom)
+  )
+
+# Total number of patients
+total_patients <- n_distinct(PKPD_JRS_transposed_all$Name)
+
+#Count symptoms per category
+symptom_summary <- medication_df %>%
+  group_by(Category, Symptom) %>%
+  summarise(
+    Patients = n_distinct(Name),
+    .groups = "drop"
+  ) %>%
+  mutate(Percentage = percent(Patients / total_patients)) %>%
+  arrange(match(Category, names(side_effect_groups)), Category, desc(Patients))
+
+#Add bold category only on first row of each group
+symptom_summary <- symptom_summary %>%
+  group_by(Category) %>%
+  mutate(
+    Category_display = ifelse(row_number() == 1, paste0("<strong>", Category, "</strong>"), "")
+  ) %>%
+  ungroup()
+
+#Calculate average side effect groups per patient
+average_side_effects <- medication_df %>%
+  group_by(Name) %>%
+  summarise(UniqueGroups = n_distinct(Category)) %>%
+  summarise(Average = mean(UniqueGroups)) %>%
+  pull(Average)
+
+#final table
+final_table <- symptom_summary %>%
+  select(Category = Category_display, Symptom, Patients, Percentage) %>%
+  mutate(across(everything(), as.character)) %>%
+  add_row(
+    Category = "<strong>Average number of adverse effect groups per patient</strong>",
+    Symptom = "",
+    Patients = "",
+    Percentage = as.character(round(average_side_effects, 2))
+  )
+
+#Render styled kable table
+manual_rows_to_space <- c(1, 6, 11, 15, 16)
+
+final_table %>%
+  kbl(
+    format = "html",
+    col.names = c("Category", "Adverse effects", "Number of patients", "Percentage of patients"),
+    caption = paste0("<b>Patients experiencing specific adverse effects</b> (N = ", total_patients, ")"),
+    align = "lccc",
+    escape = FALSE
+  ) %>%
+  kable_classic(full_width = FALSE, html_font = "Calibri") %>%
+  row_spec(0, bold = TRUE, extra_css = "padding-top:7px; padding-bottom:7px;") %>%
+  row_spec(manual_rows_to_space, extra_css = "padding-bottom:12px;")
+```
+
+# Calculations.
+
+```{r}
+# Reference range
+ref_low <- 250
+ref_high <- 2850
+
+df <- PKPD_JRS_transposed_all %>%
+  mutate(
+    Perampanel_val = as.numeric(`Perampanel blood test value`),
+    Date_Perampanel = as.Date(`Date of Perampanel`, format = "%d/%m/%Y")
+  ) %>%
+  filter(!is.na(Perampanel_val))
+
+# Count measurements below/above reference range (all measurements)
+range_counts <- df %>%
+  summarise(
+    below_n = sum(Perampanel_val < ref_low, na.rm = TRUE),
+    below_patients = n_distinct(Name[Perampanel_val < ref_low]),
+    above_n = sum(Perampanel_val > ref_high, na.rm = TRUE),
+    above_patients = n_distinct(Name[Perampanel_val > ref_high])
+  )
+
+results <- list(
+  measurements_out_of_range = range_counts
+)
+
+results
+```
+
+# Basic stats using GLM and logistic regression
+
+## stats on Did the Patient become seizure free on perampanel?
+
+```{r}
+# Fit the logistic regression model
+logistic_model <- glm(`Did the Patient become seizure free on perampanel? (0=no, 1=yes)` ~ `Perampanel blood test value` + `Weight at plasma measure` + `Gender (0=F, 1=M)` + `Age at start of perampanel (full years)`  , 
+                      data = PKPD_JRS_transposed, family = binomial)
+
+# Display the summary of the model
+summary(logistic_model)
+
+# Calculate the odds ratios and 95% confidence intervals
+exp_coef <- exp(coef(logistic_model))  # Odds ratios
+conf_int <- exp(confint(logistic_model))  # Confidence intervals
+
+# Combine odds ratios and confidence intervals into a data frame
+OR_results <- data.frame(Odds_Ratio = exp_coef, Lower_CI = conf_int[,1], Upper_CI = conf_int[,2])
+
+# Display the results
+OR_results
+
+```
+
+## stats on Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED.
+
+```{r}
+# Fit the logistic regression model
+logistic_model <- glm(`Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED` ~ `Perampanel blood test value` + `Weight at plasma measure` + `Gender (0=F, 1=M)` + `Age at start of perampanel (full years)`, 
+                      data = PKPD_JRS_transposed, family = binomial)
+
+# Display the summary of the model
+summary(logistic_model)
+
+# Calculate the odds ratios and 95% confidence intervals
+exp_coef <- exp(coef(logistic_model))  # Odds ratios
+conf_int <- exp(confint(logistic_model))  # Confidence intervals
+
+# Combine odds ratios and confidence intervals into a data frame
+OR_results <- data.frame(Odds_Ratio = exp_coef, Lower_CI = conf_int[,1], Upper_CI = conf_int[,2])
+
+# Display the results
+OR_results
+
+```
+
+## stats on side effects FIXED.
+
+```{r}
+# Fit the logistic regression model
+logistic_model <- glm(`side effects FIXED` ~ `Perampanel blood test value` + `Weight at plasma measure` + `Gender (0=F, 1=M)` + `Age at start of perampanel (full years)`, 
+                      data = PKPD_JRS_transposed, family = binomial)
+
+# Display the summary of the model
+summary(logistic_model)
+
+# Calculate the odds ratios and 95% confidence intervals
+exp_coef <- exp(coef(logistic_model))  # Odds ratios
+conf_int <- exp(confint(logistic_model))  # Confidence intervals
+
+# Combine odds ratios and confidence intervals into a data frame
+OR_results <- data.frame(Odds_Ratio = exp_coef, Lower_CI = conf_int[,1], Upper_CI = conf_int[,2])
+
+# Display the results
+OR_results
+
+```
+
+# Stats for analyzing with the repeated measures.
+
+## Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED.
+
+```{r}
+# Ensure 'Name' and 'Visit_number' are factors
+PKPD_JRS_transposed_all$Name <- as.factor(PKPD_JRS_transposed_all$Name)
+PKPD_JRS_transposed_all$Visit_number <- as.factor(PKPD_JRS_transposed_all$Visit_number)
+
+visit_counts <- PKPD_JRS_transposed_all %>%
+  group_by(Visit_number) %>%
+  tally()
+
+# # Filter out 'Visit_number's greater than 10 and count occurrences
+PKPD_JRS_filtered <- PKPD_JRS_transposed_all %>%
+  filter(as.numeric(Visit_number) <= 10) %>%  # Remove visits greater than 10
+  group_by(Visit_number) %>%
+  tally()
+
+# Further filter to remove 'Visit_number's with only one observation
+PKPD_JRS_cleaned <- PKPD_JRS_transposed_all %>%
+  filter(as.numeric(Visit_number) <= 10) %>%  # Keep only visits <= 10
+  filter(Visit_number %in% visit_counts$Visit_number[visit_counts$n > 1])
+
+### Hmmm this is tricky to remove, because it deletes most rows. 
+#PKPD_JRS_cleaned_duration <- PKPD_JRS_cleaned %>%
+#  filter(as.numeric(`Total duration of perampanel treatment (in total years) (remains to be calculated)`) <= 5)
+
+# Fit the mixed-effects logistic regression model
+# Random effects for Name and Visit_number (nested within Name)
+mixed_logistic_model <- glmer(`Beneficial effect (0=no, 1=yes) FIXED` ~ `Perampanel blood test value` +  `Weight at plasma measure` + (1 | Visit_number), 
+                              data = PKPD_JRS_cleaned, family = binomial)
+
+# Display the summary of the model
+summary(mixed_logistic_model)
+
+# Calculate odds ratios and 95% confidence intervals
+exp_coef <- exp(fixef(mixed_logistic_model))  # Odds ratios for fixed effects
+conf_int <- exp(confint(mixed_logistic_model, parm = "beta_", method = "Wald"))  # Confidence intervals
+
+# Combine odds ratios and confidence intervals into a data frame
+OR_results <- data.frame(Odds_Ratio = exp_coef, Lower_CI = conf_int[,1], Upper_CI = conf_int[,2])
+
+# Display the results
+OR_results
+```
+
+## Did the Patient become seizure free on perampanel? (0=no, 1=yes) including only visits 1 to 10.
+
+```{r}
+# Ensure 'Name' and 'Visit_number' are factors
+PKPD_JRS_transposed_all$Name <- as.factor(PKPD_JRS_transposed_all$Name)
+PKPD_JRS_transposed_all$Visit_number <- as.factor(PKPD_JRS_transposed_all$Visit_number)
+
+visit_counts <- PKPD_JRS_transposed_all %>%
+  group_by(Visit_number) %>%
+  tally()
+
+# # Filter out 'Visit_number's greater than 10 and count occurrences
+PKPD_JRS_filtered <- PKPD_JRS_transposed_all %>%
+  filter(as.numeric(Visit_number) <= 10) %>%  # Remove visits greater than 10
+  group_by(Visit_number) %>%
+  tally()
+
+# Further filter to remove 'Visit_number's with only one observation
+PKPD_JRS_cleaned <- PKPD_JRS_transposed_all %>%
+  filter(as.numeric(Visit_number) <= 10) %>%  # Keep only visits <= 10
+  filter(Visit_number %in% visit_counts$Visit_number[visit_counts$n > 1])
+
+# Fit the mixed-effects logistic regression model
+# Random effects for Name and Visit_number (nested within Name)
+mixed_logistic_model <- glmer(`Did the Patient  become seizure free on perampanel? (0=no, 1=yes)` ~ `Perampanel blood test value` +  `Weight at plasma measure` + (1 | Visit_number), 
+                              data = PKPD_JRS_cleaned, family = binomial)
+
+# Display the summary of the model
+summary(mixed_logistic_model)
+
+# Calculate odds ratios and 95% confidence intervals
+exp_coef <- exp(fixef(mixed_logistic_model))  # Odds ratios for fixed effects
+conf_int <- exp(confint(mixed_logistic_model, parm = "beta_", method = "Wald"))  # Confidence intervals
+
+# Combine odds ratios and confidence intervals into a data frame
+OR_results <- data.frame(Odds_Ratio = exp_coef, Lower_CI = conf_int[,1], Upper_CI = conf_int[,2])
+
+# Display the results
+OR_results
+```
+
+# Stats for analyzing with the repeated measures.
+
+## Did the Patient become seizure free on perampanel? including only visits 1 to 10.
+
+```{r}
+# Ensure 'Name' and 'Visit_number' are factors
+PKPD_JRS_transposed_all$Name <- as.factor(PKPD_JRS_transposed_all$Name)
+PKPD_JRS_transposed_all$Visit_number <- as.factor(PKPD_JRS_transposed_all$Visit_number)
+
+visit_counts <- PKPD_JRS_transposed_all %>%
+  group_by(Visit_number) %>%
+  tally()
+
+# # Filter out 'Visit_number's greater than 10 and count occurrences
+PKPD_JRS_filtered <- PKPD_JRS_transposed_all %>%
+  filter(as.numeric(Visit_number) <= 10) %>%  # Remove visits greater than 10
+  group_by(Visit_number) %>%
+  tally()
+
+# Further filter to remove 'Visit_number's with only one observation
+PKPD_JRS_cleaned <- PKPD_JRS_transposed_all %>%
+  filter(as.numeric(Visit_number) <= 10) %>%  # Keep only visits <= 10
+  filter(Visit_number %in% visit_counts$Visit_number[visit_counts$n > 1])
+
+# Fit the mixed-effects logistic regression model
+# Random effects for Name and Visit_number (nested within Name)
+mixed_logistic_model <- glmer(`Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED` ~ `Perampanel blood test value` +  `Weight at plasma measure` + (1 | Visit_number), 
+                              data = PKPD_JRS_cleaned, family = binomial)
+
+# Display the summary of the model
+summary(mixed_logistic_model)
+
+# Calculate odds ratios and 95% confidence intervals
+exp_coef <- exp(fixef(mixed_logistic_model))  # Odds ratios for fixed effects
+conf_int <- exp(confint(mixed_logistic_model, parm = "beta_", method = "Wald"))  # Confidence intervals
+
+# Combine odds ratios and confidence intervals into a data frame
+OR_results <- data.frame(Odds_Ratio = exp_coef, Lower_CI = conf_int[,1], Upper_CI = conf_int[,2])
+
+# Display the results
+OR_results
+
+
+```
+
+# Draft of sankey diagram
+
+## Table to get the numbers for the sankey diagram, can be changed to match what to plot.
+
+```{r}
+
+PKPD_JRS_transposed1 <- PKPD_JRS_transposed_all %>%
+  filter(as.numeric(Visit_number) <= 1)
+
+
+table1(~ as.factor(`Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED`) + `Did the Patient become seizure free on perampanel? (0=no, 1=yes)` + `Seizure type` |
+         `side effects FIXED`, 
+       data = PKPD_JRS_transposed1, 
+       render.missing = render_missing)
+```
+
+## Table to get the numbers for the sankey diagram, can be changed to match what to plot.
+
+```{r}
+table1(~ as.factor(`Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED`)   |
+         `Did the Patient become seizure free on perampanel? (0=no, 1=yes)`, 
+       data = PKPD_JRS_transposed1, 
+       render.missing = render_missing)
+```
+
+# Figure 1 (in manuscript), Sankey diagram.
+
+```{r}
+PKPD_JRS_transposed1$`Beneficial effects within 3 months` <- PKPD_JRS_transposed1$`Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED` 
+PKPD_JRS_transposed1$`Beneficial effects within 3 months` <- ifelse(PKPD_JRS_transposed1$`Beneficial effects within 3 months` == 1, "Yes", "No")
+
+PKPD_JRS_transposed1$`Seizure free on perampanel` <- PKPD_JRS_transposed1$`Did the Patient become seizure free on perampanel? (0=no, 1=yes)` 
+PKPD_JRS_transposed1$`Seizure free on perampanel` <- ifelse(PKPD_JRS_transposed1$`Seizure free on perampanel` == 1, "Yes", "No")
+
+# Renamed here
+PKPD_JRS_transposed1$`Adverse effects` <- PKPD_JRS_transposed1$`side effects FIXED` 
+PKPD_JRS_transposed1$`Adverse effects` <- ifelse(PKPD_JRS_transposed1$`Adverse effects` == 1, "Yes", "No")
+
+df <- PKPD_JRS_transposed1 %>%
+  make_long(`Seizure type`, `Beneficial effects within 3 months`, `Seizure free on perampanel`, `Adverse effects`)
+
+ggplot(df, aes(x = x, next_x = next_x, node = node, next_node = next_node, fill = factor(node), label = node)) +
+  geom_sankey(flow.alpha = .6, node.color = "gray30") +
+  geom_sankey_label(size = 5, color = "white", fill = "gray40") +
+  scale_fill_viridis_d(drop = FALSE) +
+  theme_sankey(base_size = 18) +
+  labs(x = NULL) +
+  scale_x_discrete(position = "top") +
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = .5)) +
+  ggtitle("")
+
+```
+
+# stats on Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED. Adding seizure type here. Remember this is only the first visit, as it labels the beneficial effect at 3 months.
+
+```{r}
+
+PKPD_JRS_transposed_duration <- PKPD_JRS_transposed1 %>%
+  filter(as.numeric(`Total duration of perampanel treatment (in total years) (remains to be calculated)`) <= 5)
+
+
+# Set the baseline level for Seizure type
+PKPD_JRS_transposed1$`Seizure type` <- as.factor(PKPD_JRS_transposed1$`Seizure type`)
+
+PKPD_JRS_transposed1$`Seizure type` <- relevel(PKPD_JRS_transposed1$`Seizure type`, ref = "Focal and generalized")
+
+
+# Fit the logistic regression model
+logistic_model <- glm(`Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED` ~ `Seizure type` + `Gender (0=F, 1=M)` + `Age at start of perampanel (full years)` + `C:(D/kg)`,
+                      data = PKPD_JRS_transposed1, family = binomial)
+
+# Display the summary of the model
+summary(logistic_model)
+
+# Calculate the odds ratios and 95% confidence intervals
+exp_coef <- exp(coef(logistic_model))  # Odds ratios
+conf_int <- exp(confint(logistic_model))  # Confidence intervals
+
+# Combine odds ratios and confidence intervals into a data frame
+OR_results <- data.frame(Odds_Ratio = exp_coef, Lower_CI = conf_int[,1], Upper_CI = conf_int[,2])
+
+# Display the results
+OR_results
+
+```
+
+# Showing that there is no major side effect of groups.
+
+```{r}
+PKPD_JRS_transposed_all$`New grouping A+C (inducers Carbamazepine, Phenytoin, Phenobarbital, Oxcarbazepine, Eslicarbazepine) vs B (valproate) vs non inducers` <- as.factor(PKPD_JRS_transposed_all$`New grouping A+C (inducers Carbamazepine, Phenytoin, Phenobarbital, Oxcarbazepine, Eslicarbazepine) vs B (valproate) vs non inducers`)
+
+PKPD_JRS_transposed_all$`New grouping A+C (inducers Carbamazepine, Phenytoin, Phenobarbital, Oxcarbazepine, Eslicarbazepine) vs B (valproate) vs non inducers` <- relevel(PKPD_JRS_transposed_all$`New grouping A+C (inducers Carbamazepine, Phenytoin, Phenobarbital, Oxcarbazepine, Eslicarbazepine) vs B (valproate) vs non inducers`, ref = "B")
+
+# Refit the full logistic regression model if not already in environment
+logistic_model <- glm(`Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED` ~ `New grouping A+C (inducers Carbamazepine, Phenytoin, Phenobarbital, Oxcarbazepine, Eslicarbazepine) vs B (valproate) vs non inducers` ,
+                      data = PKPD_JRS_transposed_all,
+                      family = binomial)
+
+summary(logistic_model)
+
+# Get estimated marginal means (EMMs) for seizure type
+emm <- emmeans(logistic_model, ~ `New grouping A+C (inducers Carbamazepine, Phenytoin, Phenobarbital, Oxcarbazepine, Eslicarbazepine) vs B (valproate) vs non inducers`, type = "response")
+
+# Pairwise comparisons with odds ratios and adjusted p-values
+pairs(emm, adjust = "tukey")
+```
+
+```{r}
+# Refit the full logistic regression model if not already in environment
+logistic_model <- glm(`new side effects (0 = none, 1=something)` ~ `New grouping A+C (inducers Carbamazepine, Phenytoin, Phenobarbital, Oxcarbazepine, Eslicarbazepine) vs B (valproate) vs non inducers` ,
+                      data = PKPD_JRS_transposed_all,
+                      family = binomial)
+
+summary(logistic_model)
+
+# Get estimated marginal means (EMMs) for seizure type
+emm <- emmeans(logistic_model, ~ `New grouping A+C (inducers Carbamazepine, Phenytoin, Phenobarbital, Oxcarbazepine, Eslicarbazepine) vs B (valproate) vs non inducers`, type = "response")
+
+# Pairwise comparisons with odds ratios and adjusted p-values
+pairs(emm, adjust = "tukey")
+```
+
+# Showing that there is no effect of groups.
+
+```{r}
+
+# Filter data to exclude values above 100000
+filtered_data <- PKPD_JRS_transposed_all %>%
+  filter(`C:(D/kg)` <= 100000)
+
+# One-way ANOVA: does perampanel levels differ by New grouping?
+anova_model <- aov(`C:(D/kg)` ~ `New grouping A+C (inducers Carbamazepine, Phenytoin, Phenobarbital, Oxcarbazepine, Eslicarbazepine) vs B (valproate) vs non inducers`, data = filtered_data)
+
+# View the summary table
+summary(anova_model)
+
+# Post-hoc pairwise comparisons with Tukey adjustment
+library(emmeans)
+emm <- emmeans(anova_model, ~ `New grouping A+C (inducers Carbamazepine, Phenytoin, Phenobarbital, Oxcarbazepine, Eslicarbazepine) vs B (valproate) vs non inducers`)
+pairs(emm, adjust = "tukey")
+```
+
+# ANOVA on the comparison with blood levels and the 3 age groups.
+
+```{r}
+library(dplyr)
+library(emmeans)
+
+# 1) Filter outliers and define AgeGroup (<6, 6–12, 13–17)
+filtered_data <- PKPD_JRS_transposed_all %>%
+  filter(`C:(D/kg)` <= 100000) %>%
+  mutate(
+    AgeGroup = cut(
+      `Age at start of perampanel (full years)`,
+      breaks = c(-Inf, 6, 13, 18),            # <6, 6–12, 13–17
+      labels = c("<6", "6–12", "13–17"),
+      right = FALSE
+    )
+  ) %>%
+  filter(!is.na(AgeGroup))
+
+# 2) One-way ANOVA
+anova_mod <- aov(`C:(D/kg)` ~ AgeGroup, data = filtered_data)
+summary(anova_mod)
+
+# 3) Post-hoc pairwise comparisons (Tukey-adjusted)
+emm <- emmeans(anova_mod, ~ AgeGroup)
+pairs(emm, adjust = "tukey")   # pairwise differences
+emm                             # group means (on the original scale)
+
+# If you prefer base-R Tukey:
+# TukeyHSD(anova_mod)
+
+
+```
+
+# Plotting just the mkmg vs blood value with rec range as hlines.
+
+```{r}
+
+PKPD_JRS_transposed_all <- PKPD_JRS_transposed_all %>%
+  mutate(value_range = ifelse(`Perampanel blood test value` >= 250 & `Perampanel blood test value` <= 2850, 
+                              "Within range", "Outside range"))
+
+A <- ggplot(PKPD_JRS_transposed_all, aes(x = mgkg, y = `Perampanel blood test value`, color = value_range)) +
+  geom_point(size = 3, alpha = 0.85) +
+  scale_color_brewer(palette = "Set1", name = "Recommended level") +
+  labs(
+    title = " ",
+    x = "Perampanel Dose (mg/kg)",
+    y = "Plasma Perampanel (ng/mL)"
+  ) +
+  geom_hline(yintercept = 250, linetype = "dashed", color = "black") +
+  geom_hline(yintercept = 2850, linetype = "dashed", color = "black") +
+  scale_y_continuous(breaks = seq(0, 6000, by = 1000), limits = c(0, 6000)) +  # <-- here
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    axis.title = element_text(size = 12),
+    legend.position = "top",
+    #legend.title = element_text(face = "bold"),
+    legend.background = element_rect(fill = "white", color = NA),
+    legend.key = element_rect(fill = "white")
+  )
+
+
+
+```
+
+# Coloring seizure type within the 3 months after start of perampanel.
+
+```{r}
+# Create a column with the variable names (without intercept)
+OR_results$Variables <- rownames(OR_results)
+#OR_results <- OR_results[-1, ]  # Remove intercept
+
+# Relabel Gender → Sex
+OR_results$Variables <- gsub("Gender", "Sex", OR_results$Variables)
+
+# Create the forest plot
+B <- ggplot(OR_results, aes(x = Variables, y = Odds_Ratio, ymin = Lower_CI, ymax = Upper_CI)) +
+  geom_pointrange() +                               # Points with error bars (CIs)
+  geom_hline(yintercept = 1, linetype = "dashed") + # Null effect line
+  coord_flip() +                                    # Flip coordinates
+  theme_minimal() +                                 # Clean theme
+  labs(
+    title = " ", 
+    x = "Variables", 
+    y = "Odds Ratio (OR)"
+  ) +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12)
+  )
+
+
+```
+
+```{r}
+C <- ggplot(PKPD_JRS_transposed_all, 
+            aes(x = as.numeric(`Dose of PER from list of medications column`), 
+                y = `Perampanel blood test value`,
+                color = factor(`Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED`,
+                               levels = c(0, 1),
+                               labels = c("No", "Yes")))) + 
+  geom_point(size = 3, alpha = 0.85) +
+  scale_color_brewer(palette = "Set1", name = "Reduced seizure burden") +
+  geom_hline(yintercept = 300, linetype = "dashed", color = "black") +
+  geom_hline(yintercept = 2800, linetype = "dashed", color = "black") +
+  labs(
+    title = " ",
+    x = "Perampanel Dose (mg)",
+    y = "Plasma Perampanel (ng/mL)"
+  ) +
+  scale_x_continuous(
+    breaks = seq(0, max(as.numeric(PKPD_JRS_transposed_all$`Dose of PER from list of medications column`), na.rm = TRUE), by = 1)
+  ) +
+  scale_y_continuous(
+    breaks = seq(0, max(PKPD_JRS_transposed_all$`Perampanel blood test value`, na.rm = TRUE), by = 1000)
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    axis.title = element_text(size = 12),
+    legend.position = "top",
+    #legend.title = element_text(face = "bold"),
+    legend.background = element_rect(fill = "white", color = NA),
+    legend.key = element_rect(fill = "white")
+  )
+
+
+
+```
+
+# Plotting side effects of PER against mg/kg for all data points.
+
+```{r}
+PKPD_JRS_transposed_all$`side effects FIXED` <- factor(
+  PKPD_JRS_transposed_all$`side effects (0 = none, 1=something)`,
+  levels = c(1, 0),
+  labels = c("Any", "None")
+)
+
+D <- ggplot(PKPD_JRS_transposed_all, 
+            aes(x = as.numeric(`Dose of PER from list of medications column`), 
+                y = `Perampanel blood test value`,
+                color = `side effects FIXED`)) + 
+  geom_point(size = 3, alpha = 0.85) +
+  scale_color_brewer(
+    palette = "Set1", 
+    name = "Adverse effects"
+  ) +
+  geom_hline(yintercept = 300, linetype = "dashed", color = "black") +
+  geom_hline(yintercept = 2800, linetype = "dashed", color = "black") +
+  labs(
+    title = " ",
+    x = "Perampanel Dose (mg)",
+    y = "Plasma Perampanel (ng/mL)"
+  ) +
+  scale_x_continuous(
+    breaks = seq(0, max(as.numeric(PKPD_JRS_transposed_all$`Dose of PER from list of medications column`), na.rm = TRUE), by = 1)) +
+  scale_y_continuous(
+    breaks = seq(0, max(PKPD_JRS_transposed_all$`Perampanel blood test value`, na.rm = TRUE), by = 1000)
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    axis.title = element_text(size = 12),
+    legend.position = "top",
+    #legend.title = element_text(face = "bold"),
+    legend.background = element_rect(fill = "white", color = NA),
+    legend.key = element_rect(fill = "white")
+  )
+
+
+```
+
+# Dotplot (ng/mL)/(mg/kg).
+
+```{r}
+PKPD_JRS_transposed_all <- PKPD_JRS_transposed_all %>%
+  mutate(
+    `Perampanel blood test value` = as.numeric(`Perampanel blood test value`),
+    Dose_mg   = as.numeric(`Dose of PER from list of medications column`),
+    Weight_kg = as.numeric(`Weight at plasma measure`),
+    Age_years = as.numeric(`Age at start of perampanel (full years)`),
+    Benefit   = factor(
+      `Beneficial effect on seizures 3 months AFTER perampanel start (0=no, 1=yes) FIXED`,
+      levels = c(0, 1), labels = c("No", "Yes")
+    )
+  ) %>%
+  filter(
+    !is.na(`Perampanel blood test value`),
+    !is.na(Dose_mg), !is.na(Weight_kg),
+    Dose_mg > 0, Weight_kg > 0
+  ) %>%
+  mutate(
+    conc_ng_ml = `Perampanel blood test value` * 349.3 / 1000,
+    conc_umol_L = `Perampanel blood test value` / 1000,
+    Dose_per_kg = Dose_mg / Weight_kg,
+    `C/D ratio (ng/mL*mg)` = conc_ng_ml * Dose_mg,
+    `C:(D/kg) ratio (umol/L/mg/kg)` = conc_umol_L / Dose_per_kg,
+    AgeGroup = cut(Age_years, breaks = c(-Inf, 6, 12, Inf),
+                   labels = c("<6", "6–12", ">12"), right = FALSE),
+    PatientID = as.numeric(gsub("[^0-9]", "", Name))
+  ) %>%
+  arrange(Age_years) %>%
+  mutate(PatientID = factor(PatientID, levels = unique(PatientID)))
+
+# Plot with AgeGroup as color, Benefit as shape & alpha
+E = ggplot(PKPD_JRS_transposed_all,
+       aes(x = PatientID, y = `C:(D/kg) ratio (umol/L/mg/kg)`)) +
+  geom_point(aes(color = AgeGroup, shape = Benefit, alpha = Benefit), size = 3) +
+  scale_color_brewer(palette = "Dark2", name = "Age group") +
+  scale_shape_manual(values = c("No" = 17, "Yes" = 16), name = "Reduced \nseizure burden") +
+  scale_alpha_manual(values = c("No" = 0.50, "Yes" = 1.00), guide = "none") +
+  labs(
+    title = " ",
+    x = "Patient ID (sorted by increasing age)",
+    y = expression("C:(D/kg) ratio ("*mu*"mol/L per mg/kg)")
+  ) +
+  scale_x_discrete(labels = function(x) seq_along(x)) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, size = 8),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(margin = margin(t = 10)),
+    axis.title.y = element_text(margin = margin(r = 10)),
+    legend.position = "right",
+    panel.grid.major = element_line(size = 0.3),
+    panel.grid.minor = element_blank()
+  )
+```
+
+```{r}
+grp_col <- "New grouping A+C (inducers Carbamazepine, Phenytoin, Phenobarbital, Oxcarbazepine, Eslicarbazepine) vs B (valproate) vs non inducers"
+
+# Data + simpler group labels (remove NA/"NA" group first)
+filtered_data <- PKPD_JRS_transposed_all %>%
+  filter(
+    `C:(D/kg)` <= 100000,
+    !is.na(.data[[grp_col]]),
+    .data[[grp_col]] != "NA"
+  ) %>%
+  mutate(
+    Group = factor(.data[[grp_col]],
+                   levels = c("A", "B", "Non-interacting"),
+                   labels = c("Inducers", "Valproate", "Non-inducers"))
+  ) %>%
+  droplevels()
+
+# Stats
+fit  <- aov(`C:(D/kg)` ~ Group, data = filtered_data)
+tuk  <- TukeyHSD(fit)$Group
+tuk_df <- data.frame(comparison = rownames(tuk),
+                     p = tuk[, "p adj"],
+                     stringsAsFactors = FALSE)
+
+p_to_stars <- function(p) ifelse(p < .001, "***",
+                          ifelse(p < .01, "**",
+                          ifelse(p < .05, "*", "ns")))
+
+comparisons <- list(
+  c("Inducers","Valproate"),
+  c("Valproate","Non-inducers"),
+  c("Inducers","Non-inducers")
+)
+
+get_p_for <- function(a,b){
+  nm <- c(paste(b,a,sep="-"), paste(a,b,sep="-"))
+  p <- tuk_df$p[match(nm, tuk_df$comparison)]
+  p[!is.na(p)][1]
+}
+stars <- sapply(comparisons, \(x) p_to_stars(get_p_for(x[1], x[2])))
+
+# Build the manual annotations data frame
+ymax <- max(filtered_data$`C:(D/kg)`, na.rm = TRUE)
+sig_df <- data.frame(
+  xmin        = c("Inducers","Valproate","Inducers"),
+  xmax        = c("Valproate","Non-inducers","Non-inducers"),
+  annotations = stars,
+  y_position  = c(1.02, 1.12, 1.22) * ymax
+)
+
+# Plot (Y axis divided by 1000)
+G = ggplot(filtered_data, aes(x = Group, y = `C:(D/kg)`, fill = Group)) +
+  geom_boxplot(outlier.shape = NA, width = 0.6, alpha = 0.8) +
+  geom_jitter(width = 0.18, size = 2, alpha = 0.6, color = "black") +
+  scale_fill_brewer(palette = "Set1") +
+  scale_y_continuous(labels = function(x) x / 1000) +          # <-- scale labels
+  labs(
+    title = " ",
+    x = NULL, y = "C:(D/kg) ratio (μmol/L/mg/kg)"
+  ) +
+  geom_signif(
+    data = sig_df,
+    aes(xmin = xmin, xmax = xmax, annotations = annotations, y_position = y_position),
+    manual = TRUE,
+    inherit.aes = FALSE,
+    tip_length = 0.01,
+    textsize = 4,
+    vjust = -0.1
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_text(size = 12)
+  )
+
+# see the plot
+G
+
+```
+
+# Figure 2 (in manuscript), plasma levels based on dosage, and the effect of perampanel on seizure burden within 3 months.
+
+```{r}
+# Top: Dose vs Level, Bottom: Odds Ratios
+ggarrange(A, B, labels = c("A", "B"), ncol = 1, nrow = 2, heights = c(1, 1))
+```
+
+# Figure 3 (in manuscript), relationship between plasma levels of perampanel and the dose of perampanel.
+
+```{r}
+# Top: Seizure-free plot, Bottom: Side effects plot
+ggarrange(C, D, labels = c("A", "B"), ncol = 1, nrow = 2, heights = c(1, 1))
+```
+
+# Figure 4 (in manuscript), intra-patient variability in C/D-ratio for patients, sorted by increasing age using random patient ID, and adjusted perampanel levels by co-medication type.
+
+```{r}
+# Top: Seizure-free plot, Bottom: Side effects plot
+ggarrange(E, G, labels = c("A", "B"), ncol = 1, nrow = 2, heights = c(1, 1))
+```
+
+# New suggestion from Allan to know if having a high dose resulted in a subsequent visit with a lower dose.
+
+```{r}
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(readr)
+})
+
+df_raw <- PKPD_JRS_transposed_all
+
+dose_col  <- "Dose of PER from list of medications column"
+level_col <- "Perampanel blood test value"
+name_col  <- "Name"
+visit_col <- "Visit_number"
+
+## Helper: parse numbers robustly from numeric/character/factor
+safe_num <- function(x) {
+  if (is.numeric(x)) return(x)
+  readr::parse_number(as.character(x))
+}
+
+## (Optional) sanity check: see current types
+str(df_raw[, c(name_col, visit_col, level_col, dose_col)])
+
+df <- df_raw %>%
+  mutate(
+    ## Coerce types robustly
+    !!visit_col := safe_num(.data[[visit_col]]),
+    !!dose_col  := safe_num(.data[[dose_col]]),
+    !!level_col := safe_num(.data[[level_col]])
+  )
+
+df_next <- df %>%
+  arrange(.data[[name_col]], .data[[visit_col]]) %>%
+  group_by(.data[[name_col]]) %>%
+  mutate(
+    next_visit_number = dplyr::lead(.data[[visit_col]]),
+    next_dose         = dplyr::lead(.data[[dose_col]]),
+    next_level        = dplyr::lead(.data[[level_col]])
+  ) %>%
+  ungroup()
+
+threshold <- 2800
+
+pairs_tbl <- df_next %>%
+  filter(.data[[level_col]] > threshold, !is.na(next_visit_number)) %>%
+  select(
+    {{name_col}},
+    current_visit = {{visit_col}},
+    current_level = {{level_col}},
+    current_dose  = all_of(dose_col),
+    next_visit_number, next_level, next_dose
+  ) %>%
+  mutate(
+    dose_change = next_dose - current_dose,
+    decreased   = case_when(
+      is.na(current_dose) | is.na(next_dose) ~ NA,
+      dose_change < 0 ~ TRUE,
+      dose_change > 0 ~ FALSE,
+      TRUE ~ NA
+    )
+  ) %>%
+  filter(!is.na(current_dose), !is.na(next_dose))
+
+print(pairs_tbl, n = 50)
+
+desc <- pairs_tbl %>%
+  summarise(
+    n_pairs         = n(),
+    n_decreased     = sum(dose_change < 0, na.rm = TRUE),
+    n_increased     = sum(dose_change > 0, na.rm = TRUE),
+    n_tied          = sum(dose_change == 0, na.rm = TRUE),
+    median_current  = median(current_dose, na.rm = TRUE),
+    median_next     = median(next_dose, na.rm = TRUE),
+    median_change   = median(dose_change, na.rm = TRUE),
+    iqr_change_low  = quantile(dose_change, 0.25, na.rm = TRUE),
+    iqr_change_high = quantile(dose_change, 0.75, na.rm = TRUE)
+  )
+cat("\n=== Descriptive summary ===\n"); print(desc)
+
+## Tests
+wilcox_res <- tryCatch(
+  wilcox.test(pairs_tbl$next_dose, pairs_tbl$current_dose,
+              paired = TRUE, alternative = "two.sided",
+              exact = FALSE, conf.int = TRUE),
+  error = function(e) e
+)
+cat("\n=== Wilcoxon signed-rank (next vs current) ===\n"); print(wilcox_res)
+
+n_dec <- sum(pairs_tbl$dose_change < 0, na.rm = TRUE)
+n_inc <- sum(pairs_tbl$dose_change > 0, na.rm = TRUE)
+n_eff <- n_dec + n_inc
+sign_test <- if (n_eff > 0) binom.test(n_dec, n_eff, p = 0.5, alternative = "two.sided")
+cat("\n=== Sign test (decrease vs increase; ties removed) ===\n"); print(sign_test)
+
+per_patient <- pairs_tbl %>%
+  mutate(direction = case_when(
+    dose_change < 0 ~ "decreased",
+    dose_change > 0 ~ "increased",
+    TRUE            ~ "no change"
+  )) %>%
+  select({{name_col}}, current_visit, next_visit_number, current_level,
+         current_dose, next_dose, dose_change, direction)
+cat("\n=== Per-patient pairs (triggered by level > 2800) ===\n"); print(per_patient, n = 200)
+
+```
